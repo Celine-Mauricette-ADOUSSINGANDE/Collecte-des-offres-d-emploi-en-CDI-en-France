@@ -99,6 +99,7 @@ def scrape_france_travail(query: str, label: str, token: str) -> list[dict]:
                 "motsCles":        query,
                 "typeContrat":     "CDI",
                 "minCreationDate": DATE_MIN.strftime("%Y-%m-%dT00:00:00Z"),
+                "maxCreationDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT23:59:59Z"),
                 "range":           "0-149",
             },
             timeout=20,
