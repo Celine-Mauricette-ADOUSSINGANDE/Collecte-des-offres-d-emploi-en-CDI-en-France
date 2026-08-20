@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Tracker — Data Science CDI</title>
+
+  <!-- Supabase JS client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent:   #4f46e5;
+      --success:  #059669;
+      --warning:  #d97706;
+      --danger:   #dc2626;
+      --bg:       #f5f5fa;
+      --surface:  #ffffff;
+      --border:   #e4e4f0;
+      --text:     #1e1e2e;
+      --muted:    #6b6b80;
+      --radius:   8px;
+    }
+
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; font-weight: 600; }
+    header p  { font-size: 13px; color: var(--muted); }
+    #last-updated { font-size: 12px; color: var(--muted); }
+
+    /* ── Stats ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+      padding: 20px 32px 0;
+    }
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .stat-value { font-size: 26px; font-weight: 700; }
+    .stat-value.accent  { color: var(--accent);  }
+    .stat-value.success { color: var(--success); }
+    .stat-value.warning { color: var(--warning); }
+    .stat-value.danger  { color: var(--danger);  }
+
+    /* ── Filtres ── */
+    .filters {
+      display: flex;
+      gap: 10px;
+      padding: 16px 32px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filters input,
+    .filters select {
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+    }
+    .filters input { flex: 1; min-width: 200px; }
+    .filters label { font-size: 13px; color: var(--muted); }
+
+    /* ── Tableau ── */
+    .table-wrap {
+      margin: 0 32px 32px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 10px 14px;
+      text-align: left;
+      background: #f8f8fc;
+      border-bottom: 1px solid var(--border);
+    }
+    td { font-size: 13px; padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8f8fc; }
+
+    .job-title { font-weight: 600; font-size: 13px; }
+    .job-company { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Badges statut ── */
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      outline: none;
+    }
+    .badge-new       { background: #ecfdf5; color: var(--success); }
+    .badge-saved     { background: #f5f5fa; color: var(--muted); border: 1px solid var(--border); }
+    .badge-applied   { background: #eef2ff; color: var(--accent); }
+    .badge-interview { background: #fffbeb; color: var(--warning); }
+    .badge-rejected  { background: #fef2f2; color: var(--danger); }
+
+    /* ── Source tag ── */
+    .source-tag {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: #f0f0f8;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Lien ── */
+    .btn-link {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid #c7c7f0;
+      white-space: nowrap;
+    }
+    .btn-link:hover { background: #eef2ff; }
+
+    /* ── Dropdown statut ── */
+    .status-select {
+      font-size: 11px;
+      padding: 3px 6px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+    }
+
+    /* ── Empty / loading ── */
+    .empty {
+      text-align: center;
+      padding: 48px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .loader {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      header, .filters, .stats { padding-left: 16px; padding-right: 16px; }
+      .table-wrap { margin: 0 16px 24px; }
+      th:nth-child(4), td:nth-child(4),
+      th:nth-child(5), td:nth-child(5) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🎯 Job Tracker — Data Science CDI</h1>
+    <p>Offres collectées automatiquement · France · 6 intitulés</p>
+  </div>
+  <div id="last-updated">Chargement…</div>
+</header>
+
+<!-- Stats -->
+<div class="stats">
+  <div class="stat"><div class="stat-label">Total offres</div><div class="stat-value" id="s-total">–</div></div>
+  <div class="stat"><div class="stat-label">Nouvelles</div><div class="stat-value accent" id="s-new">–</div></div>
+  <div class="stat"><div class="stat-label">Candidatures</div><div class="stat-value success" id="s-applied">–</div></div>
+  <div class="stat"><div class="stat-label">Entretiens</div><div class="stat-value warning" id="s-interview">–</div></div>
+  <div class="stat"><div class="stat-label">Taux de réponse</div><div class="stat-value accent" id="s-rate">–</div></div>
+</div>
+
+<!-- Filtres -->
+<div class="filters">
+  <input  type="text"   id="f-search"  placeholder="Rechercher un poste, entreprise, ville…">
+  <select id="f-status">
+    <option value="">Tous les statuts</option>
+    <option value="new">Nouvelle</option>
+    <option value="saved">Sauvegardée</option>
+    <option value="applied">Candidature envoyée</option>
+    <option value="interview">Entretien</option>
+    <option value="rejected">Refus</option>
+  </select>
+  <select id="f-label">
+    <option value="">Tous les intitulés</option>
+    <option>Data Scientist Junior</option>
+    <option>Data Scientist</option>
+    <option>Data Analyst</option>
+    <option>Quantitative Analyst</option>
+    <option>Business Analyst</option>
+    <option>Consultant Data</option>
+  </select>
+  <select id="f-source">
+    <option value="">Toutes les sources</option>
+    <option>France Travail</option>
+    <option>Indeed</option>
+    <option>Welcome to the Jungle</option>
+    <option>APEC</option>
+  </select>
+</div>
+
+<!-- Tableau -->
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:30%">Poste</th>
+        <th style="width:15%">Localisation</th>
+        <th style="width:13%">Source</th>
+        <th style="width:12%">Publiée</th>
+        <th style="width:14%">Statut</th>
+        <th style="width:8%">Lien</th>
+      </tr>
+    </thead>
+    <tbody id="jobs-tbody">
+      <tr><td colspan="6" class="empty"><span class="loader"></span>Chargement des offres…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  // ── Config Supabase ───────────────────────────────────
+  // Remplace ces deux valeurs par tes vraies clés Supabase
+  // (clé anon = publique, sécurisée par Row Level Security)
+  const SUPABASE_URL = "https://XXXX.supabase.co";
+  const SUPABASE_KEY = "YOUR_ANON_KEY";
+
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // ── État ─────────────────────────────────────────────
+  let allJobs = [];
+
+  // ── Statuts ──────────────────────────────────────────
+  const STATUS_LABELS = {
+    new:       "Nouvelle",
+    saved:     "Sauvegardée",
+    applied:   "Envoyée",
+    interview: "Entretien",
+    rejected:  "Refus",
+  };
+  const STATUS_CLASS = {
+    new:       "badge-new",
+    saved:     "badge-saved",
+    applied:   "badge-applied",
+    interview: "badge-interview",
+    rejected:  "badge-rejected",
+  };
+
+  // ── Chargement initial ────────────────────────────────
+  async function loadJobs() {
+    const { data, error } = await db
+      .from("jobs")
+      .select("*")
+      .order("published_at", { ascending: false });
+
+    if (error) {
+      document.getElementById("jobs-tbody").innerHTML =
+        `<tr><td colspan="6" class="empty">❌ Erreur de chargement : ${error.message}</td></tr>`;
+      return;
+    }
+
+    allJobs = data || [];
+    document.getElementById("last-updated").textContent =
+      `Mis à jour : ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+
+    renderStats();
+    renderTable();
+  }
+
+  // ── Stats ─────────────────────────────────────────────
+  function renderStats() {
+    const total     = allJobs.length;
+    const newCount  = allJobs.filter(j => j.status === "new").length;
+    const applied   = allJobs.filter(j => ["applied", "interview"].includes(j.status)).length;
+    const interview = allJobs.filter(j => j.status === "interview").length;
+    const rate      = total > 0 ? Math.round((applied / total) * 100) : 0;
+
+    document.getElementById("s-total").textContent     = total;
+    document.getElementById("s-new").textContent       = newCount;
+    document.getElementById("s-applied").textContent   = applied;
+    document.getElementById("s-interview").textContent = interview;
+    document.getElementById("s-rate").textContent      = rate + "%";
+  }
+
+  // ── Tableau ───────────────────────────────────────────
+  function renderTable() {
+    const search = document.getElementById("f-search").value.toLowerCase();
+    const fStatus = document.getElementById("f-status").value;
+    const fLabel  = document.getElementById("f-label").value;
+    const fSource = document.getElementById("f-source").value;
+
+    const filtered = allJobs.filter(j => {
+      const matchSearch = !search || [j.title, j.company, j.location].join(" ").toLowerCase().includes(search);
+      const matchStatus = !fStatus || j.status === fStatus;
+      const matchLabel  = !fLabel  || j.search_label === fLabel;
+      const matchSource = !fSource || j.source === fSource;
+      return matchSearch && matchStatus && matchLabel && matchSource;
+    });
+
+    const tbody = document.getElementById("jobs-tbody");
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">Aucune offre correspondante.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(job => {
+      const date = job.published_at
+        ? new Date(job.published_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
+        : "–";
+      const status = job.status || "new";
+      const salary = job.salary ? `<br><span style="font-size:11px;color:#059669">💶 ${job.salary}</span>` : "";
+
+      return `
+        <tr>
+          <td>
+            <div class="job-title">${job.title}</div>
+            <div class="job-company">${job.company}${salary}</div>
+          </td>
+          <td style="color:#666">${job.location || "–"}</td>
+          <td><span class="source-tag">${job.source}</span></td>
+          <td style="color:#999">${date}</td>
+          <td>
+            <select class="status-select ${STATUS_CLASS[status]}"
+                    onchange="updateStatus('${job.id}', this.value, this)">
+              ${Object.entries(STATUS_LABELS).map(([v, l]) =>
+                `<option value="${v}" ${v === status ? "selected" : ""}>${l}</option>`
+              ).join("")}
+            </select>
+          </td>
+          <td>
+            ${job.url
+              ? `<a href="${job.url}" target="_blank" rel="noopener" class="btn-link">Voir →</a>`
+              : `<span style="color:#ccc">–</span>`}
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  // ── Mise à jour statut ────────────────────────────────
+  async function updateStatus(id, newStatus, selectEl) {
+    selectEl.className = `status-select ${STATUS_CLASS[newStatus]}`;
+
+    const { error } = await db
+      .from("jobs")
+      .update({ status: newStatus })
+      .eq("id", id);
+
+    if (error) {
+      alert("Erreur lors de la mise à jour : " + error.message);
+      return;
+    }
+
+    // Mettre à jour le tableau local
+    const job = allJobs.find(j => j.id === id);
+    if (job) job.status = newStatus;
+    renderStats();
+  }
+
+  // ── Abonnement temps réel (nouvelles offres auto) ─────
+  function subscribeRealtime() {
+    db.channel("jobs-changes")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "jobs" }, payload => {
+        allJobs.unshift(payload.new);
+        renderStats();
+        renderTable();
+      })
+      .subscribe();
+  }
+
+  // ── Filtres ───────────────────────────────────────────
+  ["f-search", "f-status", "f-label", "f-source"].forEach(id => {
+    document.getElementById(id).addEventListener("input", renderTable);
+  });
+
+  // ── Init ──────────────────────────────────────────────
+  loadJobs().then(subscribeRealtime);
+</script>
+</body>
+</html>

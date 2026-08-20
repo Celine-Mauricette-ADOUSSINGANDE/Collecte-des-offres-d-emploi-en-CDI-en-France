@@ -1,0 +1,8 @@
+requests==2.31.0
+feedparser==6.0.11
+python-dotenv==1.0.0
+supabase==2.3.4
+sendgrid==6.11.0
+asyncio==3.4.3
+aiohttp==3.9.3
+hashlib2==1.0.0

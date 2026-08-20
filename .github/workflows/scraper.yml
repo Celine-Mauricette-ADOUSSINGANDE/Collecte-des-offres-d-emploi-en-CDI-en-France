@@ -1,0 +1,56 @@
+# ═══════════════════════════════════════════════════════
+#  .github/workflows/scraper.yml
+#  Déclenche le scraping toutes les 6h automatiquement
+#  + possibilité de lancer manuellement depuis l'onglet Actions
+# ═══════════════════════════════════════════════════════
+
+name: 🔍 Job Scraper — Data Science CDI
+
+on:
+  schedule:
+    # Toutes les 6h : 6h, 12h, 18h, 0h (UTC)
+    - cron: "0 6,12,18,0 * * *"
+
+  # Bouton "Run workflow" dans GitHub Actions pour tester
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    name: Scraping & stockage Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # ── 1. Récupérer le code ────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Installer Python ─────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ── 3. Installer les dépendances ────────────────────
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── 4. Lancer le scraper ────────────────────────────
+      #  Les secrets sont définis dans :
+      #  GitHub repo > Settings > Secrets and variables > Actions
+      - name: Run scraper
+        env:
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+          FT_CLIENT_ID:        ${{ secrets.FT_CLIENT_ID }}
+          FT_CLIENT_SECRET:    ${{ secrets.FT_CLIENT_SECRET }}
+          SENDGRID_API_KEY:    ${{ secrets.SENDGRID_API_KEY }}
+          ALERT_EMAIL_FROM:    ${{ secrets.ALERT_EMAIL_FROM }}
+          ALERT_EMAIL_TO:      ${{ secrets.ALERT_EMAIL_TO }}
+        run: python -m scraper.main
+
+      # ── 5. Résumé dans les logs Actions ─────────────────
+      - name: Summary
+        if: always()
+        run: echo "✅ Scraping terminé — voir les logs ci-dessus pour le détail."
