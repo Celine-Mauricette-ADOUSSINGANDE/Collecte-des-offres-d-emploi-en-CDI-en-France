@@ -9,7 +9,7 @@
 #  Filtres : date + handicap
 #  Déduplication : titre + entreprise + ville/code postal
 # ═══════════════════════════════════════════════════════
- 
+
 import os
 import re
 import sys
@@ -19,12 +19,12 @@ import feedparser
 from datetime import datetime, timezone
 from urllib.parse import quote_plus
 from dotenv import load_dotenv
- 
+
 load_dotenv()
- 
+
 # ── Date minimale ────────────────────────────────────
 DATE_MIN = datetime(2026, 8, 17, tzinfo=timezone.utc)
- 
+
 # ── Mots-clés offres handicap à exclure ─────────────
 HANDICAP_KEYWORDS = [
     "handicap", "handicapé", "handicapés", "handi",
@@ -50,17 +50,17 @@ SEARCH_QUERIES = {
 # ════════════════════════════════════════════════════════
 #  FRANCE TRAVAIL — Token OAuth2
 # ════════════════════════════════════════════════════════
- 
+
 def get_ft_token() -> str | None:
     client_id     = os.environ.get("FT_CLIENT_ID", "").strip()
     client_secret = os.environ.get("FT_CLIENT_SECRET", "").strip()
- 
+
     if not client_id or not client_secret:
         print("  [⚠️  France Travail] Secrets FT_CLIENT_ID / FT_CLIENT_SECRET manquants")
         return None
- 
+
     print(f"  [France Travail] Client ID utilisé : {client_id[:8]}...")
- 
+
     try:
         resp = requests.post(
             "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
@@ -84,14 +84,14 @@ def get_ft_token() -> str | None:
             print(f"  [France Travail] Réponse : {resp.text[:200]}")
     except Exception as e:
         print(f"  [France Travail] Erreur token : {e}")
- 
+
     return None
- 
- 
+
+
 # ════════════════════════════════════════════════════════
 #  FRANCE TRAVAIL — Recherche d'offres
 # ════════════════════════════════════════════════════════
- 
+
 def scrape_france_travail(query: str, label: str, token: str) -> list[dict]:
     if not token:
         return []
@@ -114,16 +114,16 @@ def scrape_france_travail(query: str, label: str, token: str) -> list[dict]:
         if not resp.ok:
             print(f"  [❌ France Travail] '{query}' → HTTP {resp.status_code} : {resp.text[:150]}")
             return []
- 
+
         results = resp.json().get("resultats", [])
         print(f"  [✅ France Travail] '{query}' → {len(results)} offres")
         return [_normalize_ft(r, label) for r in results]
- 
+
     except Exception as e:
         print(f"  [❌ France Travail] '{query}' erreur : {e}")
         return []
- 
- 
+
+
 def _normalize_ft(r: dict, label: str) -> dict:
     # Secteur d'activite - fourni directement par France Travail
     secteur = (
@@ -134,7 +134,7 @@ def _normalize_ft(r: dict, label: str) -> dict:
     )
     # Niveau d'experience : "Debutant accepte", "1 a 3 ans", "3 a 5 ans"...
     experience = r.get("experienceLibelle", "") or ""
- 
+
     return {
         "title":        r.get("intitule", ""),
         "company":      r.get("entreprise", {}).get("nom", "Non précisé"),
@@ -149,35 +149,49 @@ def _normalize_ft(r: dict, label: str) -> dict:
         "secteur":      secteur,
         "experience":   experience,
     }
- 
- 
+
+
 # ════════════════════════════════════════════════════════
 #  HELLO WORK — Flux RSS public
 # ════════════════════════════════════════════════════════
- 
+
 def scrape_hellowork(query: str, label: str) -> list[dict]:
     try:
-        url = (
-            "https://www.hellowork.com/fr-fr/offres-emploi/recherche.html"
-            f"?k={quote_plus(query)}&contract=CDI&location=France&rss=1"
-        )
+        # Essayer plusieurs formats d'URL Hello Work
+        urls_to_try = [
+            f"https://www.hellowork.com/fr-fr/offres-emploi/recherche.html?k={quote_plus(query)}&contract=CDI&location=France&rss=1",
+            f"https://www.hellowork.com/fr-fr/offres-emploi/recherche.html?k={quote_plus(query)}&c=CDI&rss=1",
+            f"https://www.hellowork.com/fr-fr/emplois.rss?k={quote_plus(query)}&c=CDI",
+        ]
         headers = {
-            "User-Agent": "Mozilla/5.0 (compatible; job-tracker/1.0)",
-            "Accept":     "application/rss+xml, application/xml, text/xml",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept":     "application/rss+xml, application/xml, text/xml, */*",
+            "Accept-Language": "fr-FR,fr;q=0.9",
         }
-        resp = requests.get(url, headers=headers, timeout=15)
- 
-        if not resp.ok:
-            print(f"  [⚠️  Hello Work] '{query}' → HTTP {resp.status_code}")
+
+        resp = None
+        for url in urls_to_try:
+            try:
+                r = requests.get(url, headers=headers, timeout=15)
+                if r.ok:
+                    resp = r
+                    break
+                else:
+                    print(f"  [Hello Work] URL essayee: HTTP {r.status_code}")
+            except Exception:
+                continue
+
+        if not resp or not resp.ok:
+            print(f"  [⚠️  Hello Work] '{query}' → toutes les URLs ont echoue")
             return []
- 
+
         feed    = feedparser.parse(resp.content)
         entries = feed.entries
- 
+
         if not entries:
             print(f"  [Hello Work] '{query}' → 0 offre")
             return []
- 
+
         results = []
         for e in entries:
             title     = getattr(e, "title", "")
@@ -185,14 +199,14 @@ def scrape_hellowork(query: str, label: str) -> list[dict]:
             job_title = parts[0] if parts else title
             company   = parts[1] if len(parts) >= 2 else "Non précisé"
             location  = parts[2] if len(parts) >= 3 else "France"
- 
+
             pub = None
             if hasattr(e, "published_parsed") and e.published_parsed:
                 try:
                     pub = datetime(*e.published_parsed[:6], tzinfo=timezone.utc).isoformat()
                 except Exception:
                     pub = None
- 
+
             results.append({
                 "title":        job_title,
                 "company":      company,
@@ -207,19 +221,19 @@ def scrape_hellowork(query: str, label: str) -> list[dict]:
                 "secteur":      "",
                 "experience":   "",
             })
- 
+
         print(f"  [✅ Hello Work] '{query}' → {len(results)} offres")
         return results
- 
+
     except Exception as e:
         print(f"  [❌ Hello Work] '{query}' erreur : {e}")
         return []
- 
- 
+
+
 # ════════════════════════════════════════════════════════
 #  FILTRE HANDICAP
 # ════════════════════════════════════════════════════════
- 
+
 def is_handicap_offer(offer: dict) -> bool:
     """Retourne True si l'offre est réservée aux personnes handicapées."""
     text = " ".join([
@@ -228,8 +242,8 @@ def is_handicap_offer(offer: dict) -> bool:
         offer.get("description", ""),
     ]).lower()
     return any(kw in text for kw in HANDICAP_KEYWORDS)
- 
- 
+
+
 def filter_handicap(offers: list[dict]) -> list[dict]:
     kept, dropped = [], 0
     for o in offers:
@@ -240,12 +254,12 @@ def filter_handicap(offers: list[dict]) -> list[dict]:
     if dropped:
         print(f"  [Filtre handicap] {dropped} offres RQTH/handicap exclues")
     return kept
- 
- 
+
+
 # ════════════════════════════════════════════════════════
 #  FILTRE DATE
 # ════════════════════════════════════════════════════════
- 
+
 def parse_date(s: str) -> datetime | None:
     for fmt in ["%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ",
                 "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"]:
@@ -255,8 +269,8 @@ def parse_date(s: str) -> datetime | None:
         except ValueError:
             continue
     return None
- 
- 
+
+
 def filter_by_date(offers: list[dict]) -> list[dict]:
     kept, dropped = [], 0
     for o in offers:
@@ -268,12 +282,12 @@ def filter_by_date(offers: list[dict]) -> list[dict]:
     if dropped:
         print(f"  [Filtre date] {dropped} offres antérieures au {DATE_MIN.strftime('%d/%m/%Y')} supprimées")
     return kept
- 
- 
+
+
 # ════════════════════════════════════════════════════════
 #  DÉDUPLICATION — titre + entreprise + ville/code postal
 # ════════════════════════════════════════════════════════
- 
+
 def _normalize_company(name: str) -> str:
     """Normaliser le nom d'entreprise."""
     n = name.lower().strip()
@@ -281,8 +295,8 @@ def _normalize_company(name: str) -> str:
                    " sarl", " s.r.l.", " srl", " groupe", " group"]:
         n = n.replace(suffix, "")
     return n.strip()
- 
- 
+
+
 def _normalize_location(loc: str) -> str:
     """
     Extraire ville + code postal/arrondissement.
@@ -292,7 +306,7 @@ def _normalize_location(loc: str) -> str:
          "Levallois-Perret (92)"         → "levallois-perret 92"
     """
     loc = loc.lower().strip()
- 
+
     # Code postal 5 chiffres explicite
     cp = re.search(r'\b(\d{5})\b', loc)
     if cp:
@@ -301,37 +315,37 @@ def _normalize_location(loc: str) -> str:
         ville = re.sub(r'[(),\-]+', ' ', ville).strip()
         ville = re.sub(r'\s+', ' ', ville).strip()
         return f"{ville} {code}"
- 
+
     # Département entre parenthèses ex: "(75)" "(92)"
     dep = re.search(r'\((\d{2,3})\)', loc)
     if dep:
         code_dep = dep.group(1)
         ville    = re.sub(r'\(\d{2,3}\)', '', loc)
- 
+
         # Arrondissement ex: "paris 9e" → 75009
         arr = re.search(r'(\d+)e(?:r)?', ville)
         if arr and code_dep in ["75", "13", "69"]:
             num      = int(arr.group(1))
             base     = {"75": 75000, "13": 13000, "69": 69000}[code_dep]
             code_dep = str(base + num)
- 
+
         ville = re.sub(r'\d+e(?:r)?\s*', '', ville)
         ville = re.sub(r'arrondissement', '', ville)
         ville = re.sub(r'[(),\s]+', ' ', ville).strip()
         return f"{ville} {code_dep}"
- 
+
     # Arrondissement sans parenthèses
     arr = re.search(r'(\d+)e(?:r)?\s*arrondissement', loc)
     if arr:
         num   = int(arr.group(1))
         ville = re.sub(r'\d+e(?:r)?\s*arrondissement', '', loc).strip()
         return f"{ville} {num:02d}"
- 
+
     # Ville brute nettoyée
     loc = re.sub(r'[(),]+', ' ', loc)
     return re.sub(r'\s+', ' ', loc).strip()
- 
- 
+
+
 def make_hash(o: dict) -> str:
     """
     Hash : titre + entreprise normalisée + ville/code postal.
@@ -343,27 +357,27 @@ def make_hash(o: dict) -> str:
     location = _normalize_location(o.get("location", ""))
     key      = f"{title}|{company}|{location}"
     return hashlib.sha256(key.encode()).hexdigest()[:32]
- 
- 
+
+
 # ════════════════════════════════════════════════════════
 #  SUPABASE — Insertion
 # ════════════════════════════════════════════════════════
- 
+
 def save_to_supabase(offers: list[dict]) -> int:
     url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
     key = os.environ.get("SUPABASE_KEY", "").strip()
- 
+
     if not url or not key:
         print("\n[⚠️  Supabase] Secrets manquants")
         return 0
- 
+
     headers = {
         "apikey":        key,
         "Authorization": f"Bearer {key}",
         "Content-Type":  "application/json",
         "Prefer":        "resolution=ignore-duplicates,return=minimal",
     }
- 
+
     # IDs déjà en base
     try:
         r        = requests.get(f"{url}/rest/v1/jobs?select=id&limit=10000",
@@ -373,18 +387,18 @@ def save_to_supabase(offers: list[dict]) -> int:
     except Exception as e:
         print(f"[❌ Supabase] Lecture erreur : {e}")
         existing = set()
- 
+
     # Nouvelles offres uniquement
     new_offers = []
     for o in offers:
         o["id"] = make_hash(o)
         if o["id"] not in existing:
             new_offers.append(o)
- 
+
     if not new_offers:
         print("[Supabase] Aucune nouvelle offre à insérer")
         return 0
- 
+
     # Insertion par batch de 50
     inserted = 0
     for i in range(0, len(new_offers), 50):
@@ -399,35 +413,35 @@ def save_to_supabase(offers: list[dict]) -> int:
                 print(f"[❌ Supabase] Batch {i//50+1} erreur {r.status_code} : {r.text[:200]}")
         except Exception as e:
             print(f"[❌ Supabase] Batch erreur : {e}")
- 
+
     return inserted
- 
- 
+
+
 # ════════════════════════════════════════════════════════
 #  MAIN
 # ════════════════════════════════════════════════════════
- 
+
 def main():
     print("═" * 55)
     print("  JOB TRACKER — Data Science CDI France")
     print("  Sources : France Travail + Hello Work")
     print(f"  {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print("═" * 55)
- 
+
     # Vérification secrets
     print("\n── Vérification des secrets ──")
     for s in ["SUPABASE_URL", "SUPABASE_KEY", "FT_CLIENT_ID", "FT_CLIENT_SECRET"]:
         val = os.environ.get(s, "")
         print(f"  {s} : {'✅ OK' if val else '❌ MANQUANT'}")
- 
+
     # Token France Travail
     print("\n── France Travail — authentification ──")
     token = get_ft_token()
- 
+
     if not token:
         print("\n❌ Arrêt : impossible de contacter France Travail.")
         return 1
- 
+
     # Scraping
     all_offers = []
     for label, queries in SEARCH_QUERIES.items():
@@ -435,22 +449,22 @@ def main():
         for query in queries:
             all_offers += scrape_france_travail(query, label, token)
             all_offers += scrape_hellowork(query, label)
- 
+
     print(f"\n── Total brut : {len(all_offers)} offres ──")
- 
+
     # Filtre handicap
     all_offers = filter_handicap(all_offers)
     print(f"── Après filtre handicap : {len(all_offers)} offres ──")
- 
+
     # Filtre date
     all_offers = filter_by_date(all_offers)
     print(f"── Après filtre date (≥ {DATE_MIN.strftime('%d/%m/%Y')}) : {len(all_offers)} offres ──")
- 
+
     # Sauvegarde (déduplication par hash titre+entreprise+ville)
     inserted = save_to_supabase(all_offers)
     print(f"\n✅ Terminé — {inserted} nouvelles offres insérées dans Supabase")
     return 0
- 
- 
+
+
 if __name__ == "__main__":
     sys.exit(main())
