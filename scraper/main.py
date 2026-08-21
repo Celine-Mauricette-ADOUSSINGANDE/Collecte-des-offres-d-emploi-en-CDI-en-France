@@ -15,9 +15,7 @@ import re
 import sys
 import hashlib
 import requests
-import feedparser
 from datetime import datetime, timezone
-from urllib.parse import quote_plus
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -149,85 +147,6 @@ def _normalize_ft(r: dict, label: str) -> dict:
         "secteur":      secteur,
         "experience":   experience,
     }
-
-
-# ════════════════════════════════════════════════════════
-#  HELLO WORK — Flux RSS public
-# ════════════════════════════════════════════════════════
-
-def scrape_hellowork(query: str, label: str) -> list[dict]:
-    try:
-        # Essayer plusieurs formats d'URL Hello Work
-        urls_to_try = [
-            f"https://www.hellowork.com/fr-fr/offres-emploi/recherche.html?k={quote_plus(query)}&contract=CDI&location=France&rss=1",
-            f"https://www.hellowork.com/fr-fr/offres-emploi/recherche.html?k={quote_plus(query)}&c=CDI&rss=1",
-            f"https://www.hellowork.com/fr-fr/emplois.rss?k={quote_plus(query)}&c=CDI",
-        ]
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept":     "application/rss+xml, application/xml, text/xml, */*",
-            "Accept-Language": "fr-FR,fr;q=0.9",
-        }
-
-        resp = None
-        for url in urls_to_try:
-            try:
-                r = requests.get(url, headers=headers, timeout=15)
-                if r.ok:
-                    resp = r
-                    break
-                else:
-                    print(f"  [Hello Work] URL essayee: HTTP {r.status_code}")
-            except Exception:
-                continue
-
-        if not resp or not resp.ok:
-            print(f"  [⚠️  Hello Work] '{query}' → toutes les URLs ont echoue")
-            return []
-
-        feed    = feedparser.parse(resp.content)
-        entries = feed.entries
-
-        if not entries:
-            print(f"  [Hello Work] '{query}' → 0 offre")
-            return []
-
-        results = []
-        for e in entries:
-            title     = getattr(e, "title", "")
-            parts     = [p.strip() for p in title.split(" - ")]
-            job_title = parts[0] if parts else title
-            company   = parts[1] if len(parts) >= 2 else "Non précisé"
-            location  = parts[2] if len(parts) >= 3 else "France"
-
-            pub = None
-            if hasattr(e, "published_parsed") and e.published_parsed:
-                try:
-                    pub = datetime(*e.published_parsed[:6], tzinfo=timezone.utc).isoformat()
-                except Exception:
-                    pub = None
-
-            results.append({
-                "title":        job_title,
-                "company":      company,
-                "location":     location,
-                "contract":     "CDI",
-                "source":       "Hello Work",
-                "url":          getattr(e, "link", ""),
-                "published_at": pub or datetime.now(timezone.utc).isoformat(),
-                "description":  getattr(e, "summary", "")[:500],
-                "salary":       "",
-                "search_label": label,
-                "secteur":      "",
-                "experience":   "",
-            })
-
-        print(f"  [✅ Hello Work] '{query}' → {len(results)} offres")
-        return results
-
-    except Exception as e:
-        print(f"  [❌ Hello Work] '{query}' erreur : {e}")
-        return []
 
 
 # ════════════════════════════════════════════════════════
@@ -424,7 +343,7 @@ def save_to_supabase(offers: list[dict]) -> int:
 def main():
     print("═" * 55)
     print("  JOB TRACKER — Data Science CDI France")
-    print("  Sources : France Travail + Hello Work")
+    print("  Source  : France Travail (API officielle)")
     print(f"  {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print("═" * 55)
 
@@ -448,7 +367,6 @@ def main():
         print(f"\n── {label} ──")
         for query in queries:
             all_offers += scrape_france_travail(query, label, token)
-            all_offers += scrape_hellowork(query, label)
 
     print(f"\n── Total brut : {len(all_offers)} offres ──")
 
