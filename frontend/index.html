@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Job Tracker — Data Science CDI</title>
+  <title>Job Tracker — Data Science / Data Analyst CDI</title>
 
   <!-- Supabase JS client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -188,8 +188,8 @@
 
 <header>
   <div>
-    <h1>🎯 Job Tracker — Data Science CDI</h1>
-    <p>Offres collectées automatiquement · France · 6 intitulés</p>
+    <h1>🎯 Job Tracker — Data Science / Data Analyst CDI</h1>
+    <p>Offres collectées automatiquement · France </p>
   </div>
   <div id="last-updated">Chargement…</div>
 </header>
@@ -213,6 +213,8 @@
     <option value="applied">Candidature envoyée</option>
     <option value="interview">Entretien</option>
     <option value="rejected">Refus</option>
+    <option value="unavailable">Non disponible</option>
+    <option value="not_matching">Ne correspond pas</option>
   </select>
   <select id="f-label">
     <option value="">Tous les intitulés</option>
@@ -266,11 +268,13 @@
 
   // ── Statuts ──────────────────────────────────────────
   const STATUS_LABELS = {
-    new:       "Nouvelle",
-    saved:     "Sauvegardée",
-    applied:   "Envoyée",
-    interview: "Entretien",
-    rejected:  "Refus",
+  new:         "Nouvelle",
+  saved:       "Sauvegardée",
+  applied:     "Envoyée",
+  interview:   "Entretien",
+  rejected:    "Refus",
+  unavailable: "Non disponible",
+  not_matching:"Ne correspond pas",
   };
   const STATUS_CLASS = {
     new:       "badge-new",
@@ -278,6 +282,8 @@
     applied:   "badge-applied",
     interview: "badge-interview",
     rejected:  "badge-rejected",
+    unavailable: "badge-unavailable",
+    not_matching: "badge-not-matching",
   };
 
   // ── Chargement initial ────────────────────────────────
