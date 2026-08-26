@@ -27,12 +27,11 @@ HEADERS = {
 # ── Pages métier Hello Work ──────────────────────────
 # URL stables qui ne changent pas et ne sont pas bloquées
 METIER_URLS = {
-    "Data Scientist":       "https://www.hellowork.com/fr-fr/emploi/metier_data-scientist.html",
-    "Data Analyst":         "https://www.hellowork.com/fr-fr/emploi/metier_data-analyst.html",
-    "Business Analyst":     "https://www.hellowork.com/fr-fr/emploi/metier_business-analyst.html",
-    "Data Scientist Junior":"https://www.hellowork.com/fr-fr/emploi/metier_data-scientist.html",
-    "Quantitative Analyst": "https://www.hellowork.com/fr-fr/emploi/metier_data-analyst.html",
-    "Consultant Data":      "https://www.hellowork.com/fr-fr/emploi/metier_data-scientist.html",
+    "Data Scientist":        "https://www.hellowork.com/fr-fr/emploi/metier_data-scientist.html",
+    "Data Analyst":          "https://www.hellowork.com/fr-fr/emploi/metier_data-analyst.html",
+    "Business Analyst":      "https://www.hellowork.com/fr-fr/emploi/metier_business-analyst.html",
+    "Quantitative Analyst":  "https://www.hellowork.com/fr-fr/emploi/metier_data-analyst.html",
+    "Consultant Data":       "https://www.hellowork.com/fr-fr/emploi/metier_data-scientist.html",
 }
 
 # ── Mots-clés pour valider le titre ─────────────────

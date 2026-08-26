@@ -371,6 +371,7 @@ def main():
             all_offers += scrape_france_travail(query, label, token)
 
     # Scraping Hello Work (une seule fois, pas par intitulé)
+        # Hello Work
     print("\n── Hello Work ──")
     all_offers += fetch_hellowork()
 
