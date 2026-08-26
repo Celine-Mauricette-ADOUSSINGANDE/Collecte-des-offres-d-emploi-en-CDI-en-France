@@ -17,6 +17,7 @@ import hashlib
 import requests
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+from scraper.sources.hellowork import fetch_all as fetch_hellowork
 
 load_dotenv()
 
@@ -362,13 +363,16 @@ def main():
         return 1
 
     # Scraping
+        # Scraping France Travail
     all_offers = []
     for label, queries in SEARCH_QUERIES.items():
         print(f"\n── {label} ──")
         for query in queries:
             all_offers += scrape_france_travail(query, label, token)
 
-    print(f"\n── Total brut : {len(all_offers)} offres ──")
+    # Scraping Hello Work (une seule fois, pas par intitulé)
+    print("\n── Hello Work ──")
+    all_offers += fetch_hellowork()
 
     # Filtre handicap
     all_offers = filter_handicap(all_offers)

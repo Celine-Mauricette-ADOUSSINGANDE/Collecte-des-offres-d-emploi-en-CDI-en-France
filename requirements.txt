@@ -9,3 +9,9 @@ sendgrid==6.12.5
 
 # ── Variables d'environnement ──────────────────────────
 python-dotenv==1.2.3
+
+requests==2.34.2
+beautifulsoup4==4.12.3
+supabase==2.31.0
+sendgrid==6.12.5
+python-dotenv==1.2.3
