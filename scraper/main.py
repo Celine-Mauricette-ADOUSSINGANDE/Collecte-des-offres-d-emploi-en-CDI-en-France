@@ -344,7 +344,8 @@ def main():
 
     # ── APEC ──
     print("\n── APEC ──")
-    all_offers += fetch_apec(date_min=datetime(2026, 9, 4, tzinfo=timezone.utc))  #date_min=DATE_MIN
+    all_offers += fetch_apec(date_min=DATE_MIN)  #date_min=DATE_MIN   
+    #date_min=datetime(2026, 9, 4, tzinfo=timezone.utc)
 
     print(f"\n── Total brut : {len(all_offers)} offres ──")
 
