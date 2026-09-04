@@ -18,6 +18,7 @@ import requests
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from scraper.sources.hellowork import fetch_all as fetch_hellowork
+from scraper.sources.apec import fetch_all as fetch_apec
 
 load_dotenv()
 
@@ -374,6 +375,10 @@ def main():
         # Hello Work
     print("\n── Hello Work ──")
     all_offers += fetch_hellowork()
+
+        # APEC
+    print("\n── APEC ──")
+    all_offers += fetch_apec(date_min=DATE_MIN)
 
     # Filtre handicap
     all_offers = filter_handicap(all_offers)
