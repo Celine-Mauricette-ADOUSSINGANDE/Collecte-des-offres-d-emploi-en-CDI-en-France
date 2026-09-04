@@ -25,7 +25,7 @@ HEADERS = {
     "Origin":       "https://www.apec.fr",
 }
 
-PAGE_SIZE = 20
+PAGE_SIZE = 100
 
 # ── Intitulés à chercher ─────────────────────────────
 SEARCH_QUERIES = {
@@ -267,7 +267,7 @@ def _scrape_query(
         if len(resultats) < PAGE_SIZE:
             break
 
-        time.sleep(1)   # Pause polie entre les pages
+        time.sleep(0.5)  # Pause réduite — page size plus grande
 
     return offers
 
@@ -307,7 +307,7 @@ def fetch_all(date_min: datetime = None) -> list[dict]:
             print(f"  [✅ APEC] '{query}' → {len(new)} offres retenues")
             all_offers.extend(new)
 
-            time.sleep(1)
+            time.sleep(0.5)
 
     print(f"\n  [APEC] Total : {len(all_offers)} offres collectées")
     return all_offers
