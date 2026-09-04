@@ -55,23 +55,29 @@ EXCLUDE_CONTRACTS = [
 #  Utilitaires
 # ════════════════════════════════════════════════════════
 
-def _norm(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").lower()).strip()
+def _norm(text) -> str:
+    """Normaliser en minuscules -- accepte str, int ou None."""
+    return re.sub(r"\s+", " ", str(text or "").lower()).strip()
 
 
-def _is_handicap(text: str) -> bool:
+def _is_handicap(text) -> bool:
     t = _norm(text)
     return any(kw in t for kw in HANDICAP_KEYWORDS)
 
 
-def _is_cdi(type_contrat: str) -> bool:
-    """Vérifier CDI et exclure alternance/stage."""
+def _is_cdi(type_contrat) -> bool:
+    """
+    Vérifier CDI et exclure alternance/stage.
+    APEC retourne parfois un entier pour typeContrat -- on convertit.
+    """
     t = _norm(type_contrat)
-    if not t:
-        return True   # Pas de type précisé → on garde
-    if "cdi" not in t:
+    if not t or t == "0":
+        return True   # Pas de type précisé -> on garde
+    # Exclure alternance, stage, etc.
+    if any(w in t for w in EXCLUDE_CONTRACTS):
         return False
-    return not any(w in t for w in EXCLUDE_CONTRACTS)
+    # Garder tout le reste (CDI ou type inconnu)
+    return True
 
 
 def _make_hash(title: str, company: str, location: str) -> str:
