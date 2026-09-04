@@ -184,7 +184,7 @@ def _normalize(raw: dict, label: str) -> dict:
         "location":     lieu,
         "contract":     "CDI",
         "source":       "APEC",
-        "url":          f"https://www.apec.fr/candidat/recherche-emploi.html/{numero}",
+        "url":          f"https://www.apec.fr/candidat/recherche-emploi.html/emploi/detail-annonce/{numero}.html",
         "published_at": pub_date,
         "description":  desc,
         "salary":       salary,
