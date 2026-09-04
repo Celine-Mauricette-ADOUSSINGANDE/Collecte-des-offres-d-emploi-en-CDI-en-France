@@ -1,11 +1,5 @@
 # ═══════════════════════════════════════════════════════
-#  main.py — Orchestrateur principal
-#  Lancé par GitHub Actions toutes les 6h
-# ═══════════════════════════════════════════════════════
-
-
-# ═══════════════════════════════════════════════════════
-#  main.py — Scraper France Travail + Hello Work
+#  main.py — Scraper France Travail + Hello Work + APEC
 #  Filtres : date + handicap
 #  Déduplication : titre + entreprise + ville/code postal
 # ═══════════════════════════════════════════════════════
@@ -38,13 +32,12 @@ HANDICAP_KEYWORDS = [
 # ── Intitulés ────────────────────────────────────────
 SEARCH_QUERIES = {
     "Data Scientist Junior":  ["data scientist junior", "junior data scientist"],
-    "Data Scientist":         ["data scientist", "data scientist IA ", "scientifique données", "scientifique données junior"],
-    "Data Analyst":           ["data analyst", "analyste données", "analyste données junior"],
+    "Data Scientist":         ["data scientist", "data scientist IA", "scientifique données"],
+    "Data Analyst":           ["data analyst", "analyste données"],
     "Quantitative Analyst":   ["quantitative analyst", "analyste quantitatif"],
     "Business Analyst":       ["business analyst", "business data analyst"],
     "Consultant Data":        ["consultant data", "consultant data scientist", "consultant IA"],
 }
-
 
 
 # ════════════════════════════════════════════════════════
@@ -56,10 +49,10 @@ def get_ft_token() -> str | None:
     client_secret = os.environ.get("FT_CLIENT_SECRET", "").strip()
 
     if not client_id or not client_secret:
-        print("  [⚠️  France Travail] Secrets FT_CLIENT_ID / FT_CLIENT_SECRET manquants")
+        print("  [⚠️  France Travail] Secrets manquants")
         return None
 
-    print(f"  [France Travail] Client ID utilisé : {client_id[:8]}...")
+    print(f"  [France Travail] Client ID : {client_id[:8]}...")
 
     try:
         resp = requests.post(
@@ -125,16 +118,13 @@ def scrape_france_travail(query: str, label: str, token: str) -> list[dict]:
 
 
 def _normalize_ft(r: dict, label: str) -> dict:
-    # Secteur d'activite - fourni directement par France Travail
     secteur = (
         r.get("secteurActiviteLibelle")
         or r.get("entreprise", {}).get("secteurActiviteLibelle")
         or r.get("secteurActivite", "")
         or ""
     )
-    # Niveau d'experience : "Debutant accepte", "1 a 3 ans", "3 a 5 ans"...
     experience = r.get("experienceLibelle", "") or ""
-
     return {
         "title":        r.get("intitule", ""),
         "company":      r.get("entreprise", {}).get("nom", "Non précisé"),
@@ -156,7 +146,6 @@ def _normalize_ft(r: dict, label: str) -> dict:
 # ════════════════════════════════════════════════════════
 
 def is_handicap_offer(offer: dict) -> bool:
-    """Retourne True si l'offre est réservée aux personnes handicapées."""
     text = " ".join([
         offer.get("title",       ""),
         offer.get("company",     ""),
@@ -210,7 +199,6 @@ def filter_by_date(offers: list[dict]) -> list[dict]:
 # ════════════════════════════════════════════════════════
 
 def _normalize_company(name: str) -> str:
-    """Normaliser le nom d'entreprise."""
     n = name.lower().strip()
     for suffix in [" s.a.s.", " s.a.s", " s.a.", " sas", " sa",
                    " sarl", " s.r.l.", " srl", " groupe", " group"]:
@@ -219,60 +207,39 @@ def _normalize_company(name: str) -> str:
 
 
 def _normalize_location(loc: str) -> str:
-    """
-    Extraire ville + code postal/arrondissement.
-    Ex : "Paris 9e Arrondissement (75)" → "paris 75009"
-         "Lyon 3e (69)"                  → "lyon 69003"
-         "75009 Paris"                   → "paris 75009"
-         "Levallois-Perret (92)"         → "levallois-perret 92"
-    """
     loc = loc.lower().strip()
-
-    # Code postal 5 chiffres explicite
     cp = re.search(r'\b(\d{5})\b', loc)
     if cp:
         code  = cp.group(1)
         ville = re.sub(r'\b\d{5}\b', '', loc)
         ville = re.sub(r'[(),\-]+', ' ', ville).strip()
-        ville = re.sub(r'\s+', ' ', ville).strip()
-        return f"{ville} {code}"
+        return re.sub(r'\s+', ' ', ville).strip() + f" {code}"
 
-    # Département entre parenthèses ex: "(75)" "(92)"
     dep = re.search(r'\((\d{2,3})\)', loc)
     if dep:
         code_dep = dep.group(1)
         ville    = re.sub(r'\(\d{2,3}\)', '', loc)
-
-        # Arrondissement ex: "paris 9e" → 75009
         arr = re.search(r'(\d+)e(?:r)?', ville)
         if arr and code_dep in ["75", "13", "69"]:
             num      = int(arr.group(1))
             base     = {"75": 75000, "13": 13000, "69": 69000}[code_dep]
             code_dep = str(base + num)
-
         ville = re.sub(r'\d+e(?:r)?\s*', '', ville)
         ville = re.sub(r'arrondissement', '', ville)
         ville = re.sub(r'[(),\s]+', ' ', ville).strip()
         return f"{ville} {code_dep}"
 
-    # Arrondissement sans parenthèses
     arr = re.search(r'(\d+)e(?:r)?\s*arrondissement', loc)
     if arr:
         num   = int(arr.group(1))
         ville = re.sub(r'\d+e(?:r)?\s*arrondissement', '', loc).strip()
         return f"{ville} {num:02d}"
 
-    # Ville brute nettoyée
     loc = re.sub(r'[(),]+', ' ', loc)
     return re.sub(r'\s+', ' ', loc).strip()
 
 
 def make_hash(o: dict) -> str:
-    """
-    Hash : titre + entreprise normalisée + ville/code postal.
-    → Élimine les doublons inter-sources (France Travail & Hello Work).
-    → Conserve le même poste dans deux villes différentes.
-    """
     title    = o.get("title",    "").lower().strip()
     company  = _normalize_company(o.get("company",  ""))
     location = _normalize_location(o.get("location", ""))
@@ -299,17 +266,17 @@ def save_to_supabase(offers: list[dict]) -> int:
         "Prefer":        "resolution=ignore-duplicates,return=minimal",
     }
 
-    # IDs déjà en base
     try:
-        r        = requests.get(f"{url}/rest/v1/jobs?select=id&limit=10000",
-                                headers=headers, timeout=15)
+        r        = requests.get(
+            f"{url}/rest/v1/jobs?select=id&limit=10000",
+            headers=headers, timeout=15
+        )
         existing = {row["id"] for row in r.json()} if r.ok else set()
         print(f"\n[Supabase] {len(existing)} offres déjà en base")
     except Exception as e:
         print(f"[❌ Supabase] Lecture erreur : {e}")
         existing = set()
 
-    # Nouvelles offres uniquement
     new_offers = []
     for o in offers:
         o["id"] = make_hash(o)
@@ -320,13 +287,14 @@ def save_to_supabase(offers: list[dict]) -> int:
         print("[Supabase] Aucune nouvelle offre à insérer")
         return 0
 
-    # Insertion par batch de 50
     inserted = 0
     for i in range(0, len(new_offers), 50):
         batch = new_offers[i:i+50]
         try:
-            r = requests.post(f"{url}/rest/v1/jobs",
-                              headers=headers, json=batch, timeout=30)
+            r = requests.post(
+                f"{url}/rest/v1/jobs",
+                headers=headers, json=batch, timeout=30
+            )
             if r.ok:
                 inserted += len(batch)
                 print(f"[✅ Supabase] Batch {i//50+1} : {len(batch)} offres insérées")
@@ -345,7 +313,7 @@ def save_to_supabase(offers: list[dict]) -> int:
 def main():
     print("═" * 55)
     print("  JOB TRACKER — Data Science CDI France")
-    print("  Source  : France Travail (API officielle)")
+    print("  Sources : France Travail + Hello Work + APEC")
     print(f"  {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print("═" * 55)
 
@@ -358,27 +326,27 @@ def main():
     # Token France Travail
     print("\n── France Travail — authentification ──")
     token = get_ft_token()
-
     if not token:
         print("\n❌ Arrêt : impossible de contacter France Travail.")
         return 1
 
-    # Scraping
-        # Scraping France Travail
     all_offers = []
+
+    # ── France Travail ──
     for label, queries in SEARCH_QUERIES.items():
         print(f"\n── {label} ──")
         for query in queries:
             all_offers += scrape_france_travail(query, label, token)
 
-    # Scraping Hello Work (une seule fois, pas par intitulé)
-        # Hello Work
+    # ── Hello Work ──
     print("\n── Hello Work ──")
     all_offers += fetch_hellowork()
 
-        # APEC
+    # ── APEC ──
     print("\n── APEC ──")
     all_offers += fetch_apec(date_min=DATE_MIN)
+
+    print(f"\n── Total brut : {len(all_offers)} offres ──")
 
     # Filtre handicap
     all_offers = filter_handicap(all_offers)
@@ -388,7 +356,7 @@ def main():
     all_offers = filter_by_date(all_offers)
     print(f"── Après filtre date (≥ {DATE_MIN.strftime('%d/%m/%Y')}) : {len(all_offers)} offres ──")
 
-    # Sauvegarde (déduplication par hash titre+entreprise+ville)
+    # Sauvegarde
     inserted = save_to_supabase(all_offers)
     print(f"\n✅ Terminé — {inserted} nouvelles offres insérées dans Supabase")
     return 0

@@ -1,19 +1,16 @@
-import requests
-import json
+# ═══════════════════════════════════════════════════════
+#  sources/apec.py
+#  Scraper APEC — API interne JSON
+#  Basé sur le code fonctionnel fourni
+#  Endpoint : https://www.apec.fr/cms/webservices/rechercheOffre
+# ═══════════════════════════════════════════════════════
+
+import re
 import time
-import os
-from datetime import datetime
+import hashlib
+import requests
+from datetime import datetime, timezone
 
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-MOTS_CLES = "data analyst"
-PAGE_SIZE = 20
-OUTPUT_FILE = "apec_offres.json"
-
-# URL APEC QUI FONCTIONNE
 APEC_URL = "https://www.apec.fr/cms/webservices/rechercheOffre"
 
 HEADERS = {
@@ -22,331 +19,289 @@ HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/139.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/json, text/plain, */*",
+    "Accept":       "application/json, text/plain, */*",
     "Content-Type": "application/json",
-    "Referer": "https://www.apec.fr/candidat/recherche-emploi.html",
-    "Origin": "https://www.apec.fr",
+    "Referer":      "https://www.apec.fr/candidat/recherche-emploi.html",
+    "Origin":       "https://www.apec.fr",
 }
 
+PAGE_SIZE = 20
 
-# ============================================================
-# AFFICHAGE
-# ============================================================
+# ── Intitulés à chercher ─────────────────────────────
+SEARCH_QUERIES = {
+    "Data Scientist Junior":  ["data scientist junior", "junior data scientist"],
+    "Data Scientist":         ["data scientist"],
+    "Data Analyst":           ["data analyst", "analyste données"],
+    "Quantitative Analyst":   ["quantitative analyst", "analyste quantitatif"],
+    "Business Analyst":       ["business analyst", "business data analyst"],
+    "Consultant Data":        ["consultant data", "consultant data scientist", "consultant IA"],
+}
 
-def afficher_requete(payload):
-    print("\n" + "=" * 60)
-    print("REQUÊTE APEC")
-    print("=" * 60)
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+# ── Mots-clés à exclure ──────────────────────────────
+HANDICAP_KEYWORDS = [
+    "handicap", "handicapé", "handicapés", "handi", "rqth",
+    "travailleur handicapé", "travailleurs handicapés",
+    "talents handicap", "forum handicap", "emploi handicap",
+    "disability", "disabled", "agefiph", "fiphfp",
+]
+
+EXCLUDE_CONTRACTS = [
+    "alternance", "apprentissage", "stage", "stagiaire",
+    "freelance", "indépendant",
+]
 
 
-# ============================================================
-# REQUÊTE APEC
-# ============================================================
+# ════════════════════════════════════════════════════════
+#  Utilitaires
+# ════════════════════════════════════════════════════════
 
-def rechercher_offres(start_index=0, page_size=20):
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
+
+def _is_handicap(text: str) -> bool:
+    t = _norm(text)
+    return any(kw in t for kw in HANDICAP_KEYWORDS)
+
+
+def _is_cdi(type_contrat: str) -> bool:
+    """Vérifier CDI et exclure alternance/stage."""
+    t = _norm(type_contrat)
+    if not t:
+        return True   # Pas de type précisé → on garde
+    if "cdi" not in t:
+        return False
+    return not any(w in t for w in EXCLUDE_CONTRACTS)
+
+
+def _make_hash(title: str, company: str, location: str) -> str:
+    """Hash pour déduplication inter-sources."""
+    key = f"{_norm(title)}|{_norm(company)}|{_norm(location)}"
+    return hashlib.sha256(key.encode()).hexdigest()[:32]
+
+
+def _parse_date(date_val) -> str:
+    """Normaliser la date APEC au format ISO UTC."""
+    if not date_val:
+        return datetime.now(timezone.utc).isoformat()
+    try:
+        # Timestamp en millisecondes
+        if isinstance(date_val, (int, float)):
+            return datetime.fromtimestamp(
+                date_val / 1000, tz=timezone.utc
+            ).isoformat()
+        # Chaîne "2026-08-17T10:30:00" ou "2026-08-17"
+        for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"]:
+            try:
+                dt = datetime.strptime(str(date_val)[:19], fmt)
+                return dt.replace(tzinfo=timezone.utc).isoformat()
+            except ValueError:
+                continue
+    except Exception:
+        pass
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ════════════════════════════════════════════════════════
+#  Requête APEC — une page de résultats
+# ════════════════════════════════════════════════════════
+
+def _fetch_page(query: str, start_index: int) -> dict | None:
+    """
+    Appeler l'API APEC pour une page de résultats.
+    Retourne le JSON brut ou None en cas d'erreur.
+    """
     payload = {
-        "motsCles": MOTS_CLES,
+        "motsCles": query,
         "pagination": {
             "startIndex": start_index,
-            "range": page_size
-        }
+            "range":      PAGE_SIZE,
+        },
     }
-
-    afficher_requete(payload)
-
     try:
-        response = requests.post(
+        resp = requests.post(
             APEC_URL,
             json=payload,
             headers=HEADERS,
-            timeout=30
+            timeout=30,
         )
-
+        if resp.status_code != 200:
+            print(
+                f"  [❌ APEC] '{query}' "
+                f"page {start_index} → HTTP {resp.status_code}"
+            )
+            return None
+        try:
+            return resp.json()
+        except ValueError:
+            print(f"  [❌ APEC] '{query}' réponse non JSON")
+            return None
     except requests.exceptions.RequestException as e:
-        print("\n❌ ERREUR RÉSEAU :")
-        print(e)
+        print(f"  [❌ APEC] '{query}' erreur réseau : {e}")
         return None
 
-    print("\nSTATUS :", response.status_code)
-    print("TYPE   :", response.headers.get("content-type"))
-    print("TAILLE :", len(response.text))
 
-    # --------------------------------------------------------
-    # Gestion erreurs HTTP
-    # --------------------------------------------------------
+# ════════════════════════════════════════════════════════
+#  Normalisation d'une offre brute APEC
+# ════════════════════════════════════════════════════════
 
-    if response.status_code != 200:
-        print("\n❌ ERREUR HTTP :", response.status_code)
-        print("\nRéponse APEC :")
-        print(response.text[:5000])
-        return None
+def _normalize(raw: dict, label: str) -> dict:
+    """
+    Convertir une offre brute APEC au format commun
+    compatible avec la table Supabase.
+    """
+    title   = raw.get("intitule", "") or ""
+    company = raw.get("nomCommercial", "") or "Non précisé"
+    lieu    = raw.get("lieuTexte", "") or "France"
+    numero  = raw.get("numeroOffre", "") or raw.get("id", "")
 
-    # --------------------------------------------------------
-    # Conversion JSON
-    # --------------------------------------------------------
+    # Nettoyer la description HTML
+    desc = raw.get("texteOffre", "") or ""
+    desc = re.sub(r"<[^>]+>", " ", desc)
+    desc = re.sub(r"\s+", " ", desc).strip()[:500]
 
-    try:
-        data = response.json()
-    except ValueError:
-        print("\n❌ La réponse APEC n'est pas du JSON valide.")
-        print(response.text[:5000])
-        return None
+    # Secteur
+    secteur = raw.get("secteurActivite", "") or ""
 
-    return data
+    # Salaire
+    salary = raw.get("salaireTexte", "") or ""
 
-
-# ============================================================
-# EXTRACTION DES OFFRES
-# ============================================================
-
-def extraire_offres(data):
-
-    if not isinstance(data, dict):
-        print("❌ Réponse APEC inattendue.")
-        return []
-
-    offres = data.get("resultats", [])
-
-    if not isinstance(offres, list):
-        print("❌ Le champ 'resultats' n'est pas une liste.")
-        return []
-
-    return offres
-
-
-# ============================================================
-# NORMALISATION D'UNE OFFRE
-# ============================================================
-
-def normaliser_offre(offre):
+    # Date publication
+    pub_date = _parse_date(
+        raw.get("datePublication") or raw.get("dateValidation")
+    )
 
     return {
-        "source": "APEC",
-
-        "id": offre.get("id"),
-        "numeroOffre": offre.get("numeroOffre"),
-
-        "intitule": offre.get("intitule"),
-        "intituleSurbrillance": offre.get("intituleSurbrillance"),
-
-        "entreprise": offre.get("nomCommercial"),
-
-        "lieu": offre.get("lieuTexte"),
-
-        "salaire": offre.get("salaireTexte"),
-
-        "description": offre.get("texteOffre"),
-
-        "dateValidation": offre.get("dateValidation"),
-        "datePublication": offre.get("datePublication"),
-
-        "latitude": offre.get("latitude"),
-        "longitude": offre.get("longitude"),
-
-        "localisable": offre.get("localisable"),
-
-        "score": offre.get("score"),
-
-        "offreConfidentielle": offre.get("offreConfidentielle"),
-
-        "secteurActivite": offre.get("secteurActivite"),
-        "secteurActiviteParent": offre.get("secteurActiviteParent"),
-
-        "clientReel": offre.get("clientReel"),
-
-        "contractDuration": offre.get("contractDuration"),
-        "typeContrat": offre.get("typeContrat"),
-
-        "origineCode": offre.get("origineCode"),
-
-        "idNomTeletravail": offre.get("idNomTeletravail"),
-
-        "indicateurOqa": offre.get("indicateurOqa"),
-        "indicateurFaibleCandidature": offre.get(
-            "indicateurFaibleCandidature"
-        ),
-
-        "urlLogo": offre.get("urlLogo"),
-
-        "url": (
-            "https://www.apec.fr/candidat/recherche-emploi.html/"
-            + str(offre.get("numeroOffre"))
-        ),
-
-        "dateScraping": datetime.now().isoformat()
+        "id":           _make_hash(title, company, lieu),
+        "title":        title,
+        "company":      company,
+        "location":     lieu,
+        "contract":     "CDI",
+        "source":       "APEC",
+        "url":          f"https://www.apec.fr/candidat/recherche-emploi.html/{numero}",
+        "published_at": pub_date,
+        "description":  desc,
+        "salary":       salary,
+        "search_label": label,
+        "secteur":      secteur,
+        "experience":   "",
+        "status":       "new",
     }
 
 
-# ============================================================
-# SAUVEGARDE
-# ============================================================
+# ════════════════════════════════════════════════════════
+#  Scraper complet pour un intitulé
+# ════════════════════════════════════════════════════════
 
-def sauvegarder_offres(offres):
-
-    try:
-        with open(
-            OUTPUT_FILE,
-            "w",
-            encoding="utf-8"
-        ) as f:
-
-            json.dump(
-                offres,
-                f,
-                indent=2,
-                ensure_ascii=False
-            )
-
-        print("\n" + "=" * 60)
-        print("SAUVEGARDE")
-        print("=" * 60)
-
-        print(f"✅ {len(offres)} offres sauvegardées")
-        print(f"📁 {os.path.abspath(OUTPUT_FILE)}")
-
-    except Exception as e:
-        print("\n❌ ERREUR SAUVEGARDE :")
-        print(e)
-
-
-# ============================================================
-# SCRAPING
-# ============================================================
-
-def scraper():
-
-    print("=" * 60)
-    print("        SCRAPER APEC")
-    print("=" * 60)
-
-    print(f"Mots-clés : {MOTS_CLES}")
-    print(f"Taille page : {PAGE_SIZE}")
-    print(f"Sortie : {OUTPUT_FILE}")
-    print(f"\nEndpoint : {APEC_URL}")
-
-    toutes_les_offres = []
-
+def _scrape_query(
+    query: str,
+    label: str,
+    date_min: datetime,
+) -> list[dict]:
+    """
+    Récupérer toutes les pages APEC pour un intitulé.
+    Pagination automatique jusqu'à totalCount ou date_min.
+    """
+    offers      = []
     start_index = 0
+    total_count = None
 
     while True:
-
-        print("\n" + "=" * 60)
-        print(
-            f"SCRAP APEC | startIndex={start_index} "
-            f"| range={PAGE_SIZE}"
-        )
-        print("=" * 60)
-
-        data = rechercher_offres(
-            start_index=start_index,
-            page_size=PAGE_SIZE
-        )
-
+        data = _fetch_page(query, start_index)
         if data is None:
-            print("\n❌ Arrêt du scraping")
             break
 
-        offres = extraire_offres(data)
-
-        print(f"\n✅ Offres reçues : {len(offres)}")
-
-        if not offres:
-            print("\nℹ️ Plus aucune offre.")
-            break
-
-        # ----------------------------------------------------
-        # Ajout des offres
-        # ----------------------------------------------------
-
-        for offre in offres:
-
-            offre_normalisee = normaliser_offre(offre)
-
-            toutes_les_offres.append(offre_normalisee)
-
-        # ----------------------------------------------------
-        # Total annoncé par APEC
-        # ----------------------------------------------------
-
-        total_count = data.get("totalCount")
-
-        if total_count is not None:
-
-            print(f"📊 Total APEC : {total_count}")
+        # Total annoncé par APEC (première page uniquement)
+        if total_count is None:
+            total_count = data.get("totalCount", 0)
             print(
-                f"📥 Total récupéré : "
-                f"{len(toutes_les_offres)}"
+                f"  [APEC] '{query}' → "
+                f"{total_count} offres annoncées"
             )
 
-            if len(toutes_les_offres) >= total_count:
-                print("\n✅ Toutes les offres ont été récupérées.")
-                break
-
-        # ----------------------------------------------------
-        # Si moins de PAGE_SIZE résultats :
-        # dernière page
-        # ----------------------------------------------------
-
-        if len(offres) < PAGE_SIZE:
-
-            print(
-                "\nℹ️ Nombre d'offres inférieur à la taille "
-                "de la page."
-            )
-
+        resultats = data.get("resultats", [])
+        if not resultats:
             break
 
-        # ----------------------------------------------------
-        # Page suivante
-        # ----------------------------------------------------
+        for raw in resultats:
+            title   = raw.get("intitule", "") or ""
+            company = raw.get("nomCommercial", "") or ""
+            texte   = title + " " + company + " " + (raw.get("texteOffre", "") or "")
 
+            # Filtre handicap
+            if _is_handicap(texte):
+                continue
+
+            # Filtre contrat
+            contrat = raw.get("typeContrat", "") or ""
+            if not _is_cdi(contrat):
+                continue
+
+            # Filtre date
+            pub_iso = _parse_date(
+                raw.get("datePublication") or raw.get("dateValidation")
+            )
+            try:
+                pub_dt = datetime.fromisoformat(
+                    pub_iso.replace("Z", "+00:00")
+                )
+                if pub_dt < date_min:
+                    continue
+            except Exception:
+                pass
+
+            offers.append(_normalize(raw, label))
+
+        # Pagination — continuer ?
         start_index += PAGE_SIZE
+        fetched = start_index
 
-        # Petite pause pour éviter d'enchaîner
-        # trop rapidement les requêtes
-        time.sleep(1)
+        if total_count and fetched >= total_count:
+            break
+        if len(resultats) < PAGE_SIZE:
+            break
 
-    # --------------------------------------------------------
-    # Suppression des doublons
-    # --------------------------------------------------------
+        time.sleep(1)   # Pause polie entre les pages
 
-    offres_uniques = []
-
-    ids_vus = set()
-
-    for offre in toutes_les_offres:
-
-        identifiant = (
-            offre.get("numeroOffre")
-            or offre.get("id")
-        )
-
-        if identifiant in ids_vus:
-            continue
-
-        ids_vus.add(identifiant)
-        offres_uniques.append(offre)
-
-    # --------------------------------------------------------
-    # Sauvegarde
-    # --------------------------------------------------------
-
-    sauvegarder_offres(offres_uniques)
-
-    print("\n" + "=" * 60)
-    print("TERMINÉ")
-    print("=" * 60)
-
-    print(
-        f"✅ {len(offres_uniques)} offres récupérées"
-    )
+    return offers
 
 
-# ============================================================
-# MAIN
-# ============================================================
+# ════════════════════════════════════════════════════════
+#  Point d'entrée appelé depuis main.py
+# ════════════════════════════════════════════════════════
 
-if __name__ == "__main__":
-    scraper()
+def fetch_all(date_min: datetime = None) -> list[dict]:
+    """
+    Scraper toutes les offres APEC pour les 6 intitulés.
+    Appelé depuis main.py — même interface que hellowork.fetch_all().
+
+    Args:
+        date_min : datetime UTC — exclure les offres antérieures
+
+    Returns:
+        Liste d'offres normalisées et dédupliquées
+    """
+    if date_min is None:
+        date_min = datetime(2026, 8, 17, tzinfo=timezone.utc)
+
+    all_offers = []
+    seen_ids   = set()
+
+    for label, queries in SEARCH_QUERIES.items():
+        print(f"\n  [APEC] ── {label} ──")
+
+        for query in queries:
+            offers = _scrape_query(query, label, date_min)
+
+            # Déduplication inter-requêtes par hash
+            new = [o for o in offers if o["id"] not in seen_ids]
+            for o in new:
+                seen_ids.add(o["id"])
+
+            print(f"  [✅ APEC] '{query}' → {len(new)} offres retenues")
+            all_offers.extend(new)
+
+            time.sleep(1)
+
+    print(f"\n  [APEC] Total : {len(all_offers)} offres collectées")
+    return all_offers
