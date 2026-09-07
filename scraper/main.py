@@ -124,13 +124,25 @@ def _normalize_ft(r: dict, label: str) -> dict:
         or ""
     )
     experience = r.get("experienceLibelle", "") or ""
+    # URL correcte pour le candidat : /offres/detail/{id}
+    offre_id = r.get("id", "")
+    url_origine = r.get("origineOffre", {}).get("urlOrigine", "")
+    # Utiliser l'URL d'origine si elle est externe (pas francetravail)
+    # Sinon construire l'URL correcte avec l'ID
+    if url_origine and "francetravail.fr" not in url_origine:
+        url = url_origine
+    elif offre_id:
+        url = f"https://candidat.francetravail.fr/offres/detail/{offre_id}"
+    else:
+        url = url_origine
+
     return {
         "title":        r.get("intitule", ""),
         "company":      r.get("entreprise", {}).get("nom", "Non précisé"),
         "location":     r.get("lieuTravail", {}).get("libelle", "France"),
         "contract":     "CDI",
         "source":       "France Travail",
-        "url":          r.get("origineOffre", {}).get("urlOrigine", ""),
+        "url":          url,
         "published_at": r.get("dateCreation", datetime.now(timezone.utc).isoformat()),
         "description":  r.get("description", "")[:500],
         "salary":       r.get("salaire", {}).get("libelle", ""),
