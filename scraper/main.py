@@ -1,14 +1,7 @@
 # ═══════════════════════════════════════════════════════
 #  main.py — Orchestrateur principal
 #  Lancé par GitHub Actions toutes les 6h
-# ═══════════════════════════════════════════════════════
-
-
-# ═══════════════════════════════════════════════════════
-#  main.py — Scraper France Travail + Hello Work
-#  Filtres : date + handicap
-#  Déduplication : titre + entreprise + ville/code postal
-# ═══════════════════════════════════════════════════════
+#  ═══════════════════════════════════════════════════════
 
 import os
 import re
@@ -35,10 +28,17 @@ HANDICAP_KEYWORDS = [
     "agefiph", "fiphfp",
 ]
 
+# ── Mots-clés offres senior à exclure ───────────────
+SENIOR_KEYWORDS = [
+    "senior", "sénior", "confirmé", "confirmée",
+    "expérimenté", "expérimentée", "lead", "principal",
+    "staff", "expert", "head of", "manager",
+]
+
 # ── Intitulés ────────────────────────────────────────
 SEARCH_QUERIES = {
     "Data Scientist Junior":  ["data scientist junior", "junior data scientist"],
-    "Data Scientist":         ["data scientist", "data scientist IA ", "scientifique données", "scientifique données junior"],
+    "Data Scientist":         ["data scientist", "data scientist IA", "scientifique données", "scientifique données junior"],
     "Data Analyst":           ["data analyst", "analyste données", "analyste données junior"],
     "Quantitative Analyst":   ["quantitative analyst", "analyste quantitatif"],
     "Business Analyst":       ["business analyst", "business data analyst"],
@@ -124,15 +124,16 @@ def scrape_france_travail(query: str, label: str, token: str) -> list[dict]:
         return []
 
 
+
 def _normalize_ft(r: dict, label: str) -> dict:
-    # Secteur d'activite - fourni directement par France Travail
+
     secteur = (
         r.get("secteurActiviteLibelle")
         or r.get("entreprise", {}).get("secteurActiviteLibelle")
         or r.get("secteurActivite", "")
         or ""
     )
-    # Niveau d'experience : "Debutant accepte", "1 a 3 ans", "3 a 5 ans"...
+
     experience = r.get("experienceLibelle", "") or ""
 
     return {
@@ -174,6 +175,31 @@ def filter_handicap(offers: list[dict]) -> list[dict]:
             kept.append(o)
     if dropped:
         print(f"  [Filtre handicap] {dropped} offres RQTH/handicap exclues")
+    return kept
+
+
+# ════════════════════════════════════════════════════════
+#  FILTRE SENIOR
+# ════════════════════════════════════════════════════════
+
+def is_senior_offer(offer: dict) -> bool:
+    """Retourne True si l'offre cible un profil senior/confirmé/lead."""
+    text = " ".join([
+        offer.get("title",       ""),
+        offer.get("description", ""),
+    ]).lower()
+    return any(kw in text for kw in SENIOR_KEYWORDS)
+
+
+def filter_senior(offers: list[dict]) -> list[dict]:
+    kept, dropped = [], 0
+    for o in offers:
+        if is_senior_offer(o):
+            dropped += 1
+        else:
+            kept.append(o)
+    if dropped:
+        print(f"  [Filtre senior] {dropped} offres senior/lead/confirmé exclues")
     return kept
 
 
@@ -281,8 +307,41 @@ def make_hash(o: dict) -> str:
 
 
 # ════════════════════════════════════════════════════════
-#  SUPABASE — Insertion
+#  DÉDUPLICATION EN MÉMOIRE — avant insertion Supabase
 # ════════════════════════════════════════════════════════
+
+def deduplicate_in_memory(offers: list[dict]) -> list[dict]:
+    """
+    Supprime les doublons dans la liste collectée (même run, multi-sources).
+    Garde la première occurrence par hash.
+    """
+    seen   = set()
+    unique = []
+    for o in offers:
+        h = make_hash(o)
+        if h not in seen:
+            seen.add(h)
+            unique.append(o)
+    dropped = len(offers) - len(unique)
+    if dropped:
+        print(f"  [Dédup mémoire] {dropped} doublons inter-sources supprimés")
+    return unique
+
+
+# ════════════════════════════════════════════════════════
+#  SUPABASE — Insertion (avec exclusion par colonne status)
+# ════════════════════════════════════════════════════════
+
+# Statuts qui indiquent que l'offre a déjà été traitée :
+# elle ne doit JAMAIS être réinsérée même si elle repasse dans le scraping.
+EXCLUDED_STATUSES = {
+    "applied",    # candidature envoyée
+    "interview",  # entretien obtenu
+    "offer",      # offre reçue
+    "rejected",   # refus
+    "ignored",    # volontairement écarté
+}
+
 
 def save_to_supabase(offers: list[dict]) -> int:
     url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
@@ -299,34 +358,48 @@ def save_to_supabase(offers: list[dict]) -> int:
         "Prefer":        "resolution=ignore-duplicates,return=minimal",
     }
 
-    # IDs déjà en base
+    # IDs déjà en base + leur statut
     try:
-        r        = requests.get(f"{url}/rest/v1/jobs?select=id&limit=10000",
-                                headers=headers, timeout=15)
-        existing = {row["id"] for row in r.json()} if r.ok else set()
-        print(f"\n[Supabase] {len(existing)} offres déjà en base")
+        r = requests.get(
+            f"{url}/rest/v1/jobs?select=id,status&limit=10000",
+            headers=headers,
+            timeout=15,
+        )
+        rows         = r.json() if r.ok else []
+        existing_ids = {row["id"] for row in rows}
+        excluded_ids = {row["id"] for row in rows
+                        if row.get("status") in EXCLUDED_STATUSES}
+        print(f"\n[Supabase] {len(existing_ids)} offres en base "
+              f"({len(excluded_ids)} avec statut traité → ignorées)")
     except Exception as e:
         print(f"[❌ Supabase] Lecture erreur : {e}")
-        existing = set()
+        existing_ids = set()
+        excluded_ids = set()
 
-    # Nouvelles offres uniquement
+    # Nouvelles offres : ni déjà en base, ni avec un statut traité
     new_offers = []
     for o in offers:
         o["id"] = make_hash(o)
-        if o["id"] not in existing:
+        if o["id"] not in existing_ids and o["id"] not in excluded_ids:
             new_offers.append(o)
 
     if not new_offers:
         print("[Supabase] Aucune nouvelle offre à insérer")
         return 0
 
+    print(f"[Supabase] {len(new_offers)} nouvelles offres à insérer")
+
     # Insertion par batch de 50
     inserted = 0
     for i in range(0, len(new_offers), 50):
-        batch = new_offers[i:i+50]
+        batch = new_offers[i:i + 50]
         try:
-            r = requests.post(f"{url}/rest/v1/jobs",
-                              headers=headers, json=batch, timeout=30)
+            r = requests.post(
+                f"{url}/rest/v1/jobs",
+                headers=headers,
+                json=batch,
+                timeout=30,
+            )
             if r.ok:
                 inserted += len(batch)
                 print(f"[✅ Supabase] Batch {i//50+1} : {len(batch)} offres insérées")
@@ -345,7 +418,7 @@ def save_to_supabase(offers: list[dict]) -> int:
 def main():
     print("═" * 55)
     print("  JOB TRACKER — Data Science CDI France")
-    print("  Source  : France Travail (API officielle)")
+    print("  Sources : France Travail (API) + Hello Work")
     print(f"  {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print("═" * 55)
 
@@ -355,7 +428,7 @@ def main():
         val = os.environ.get(s, "")
         print(f"  {s} : {'✅ OK' if val else '❌ MANQUANT'}")
 
-    # Token France Travail
+    # ── France Travail : authentification ──────────────
     print("\n── France Travail — authentification ──")
     token = get_ft_token()
 
@@ -363,28 +436,35 @@ def main():
         print("\n❌ Arrêt : impossible de contacter France Travail.")
         return 1
 
-    # Scraping
-        # Scraping France Travail
+    # ── Scraping France Travail ────────────────────────
     all_offers = []
     for label, queries in SEARCH_QUERIES.items():
         print(f"\n── {label} ──")
         for query in queries:
             all_offers += scrape_france_travail(query, label, token)
 
-    # Scraping Hello Work (une seule fois, pas par intitulé)
-        # Hello Work
+    # ── Scraping Hello Work ────────────────────────────
     print("\n── Hello Work ──")
     all_offers += fetch_hellowork()
 
-    # Filtre handicap
-    all_offers = filter_handicap(all_offers)
-    print(f"── Après filtre handicap : {len(all_offers)} offres ──")
+    print(f"\n── Total brut collecté : {len(all_offers)} offres ──")
 
-    # Filtre date
+    # ── Filtres ────────────────────────────────────────
+    all_offers = filter_handicap(all_offers)
+    print(f"── Après filtre handicap  : {len(all_offers)} offres ──")
+
+    all_offers = filter_senior(all_offers)
+    print(f"── Après filtre senior    : {len(all_offers)} offres ──")
+
+
     all_offers = filter_by_date(all_offers)
     print(f"── Après filtre date (≥ {DATE_MIN.strftime('%d/%m/%Y')}) : {len(all_offers)} offres ──")
 
-    # Sauvegarde (déduplication par hash titre+entreprise+ville)
+    # ── Déduplication en mémoire ───────────────────────
+    all_offers = deduplicate_in_memory(all_offers)
+    print(f"── Après déduplication    : {len(all_offers)} offres ──")
+
+    # ── Sauvegarde Supabase ────────────────────────────
     inserted = save_to_supabase(all_offers)
     print(f"\n✅ Terminé — {inserted} nouvelles offres insérées dans Supabase")
     return 0
