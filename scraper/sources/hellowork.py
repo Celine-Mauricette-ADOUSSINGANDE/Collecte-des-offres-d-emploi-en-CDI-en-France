@@ -29,24 +29,24 @@ HEADERS = {
 METIER_URLS = {
     "Data Scientist":        "https://www.hellowork.com/fr-fr/emploi/metier_data-scientist.html",
     "Data Analyst":          "https://www.hellowork.com/fr-fr/emploi/metier_data-analyst.html",
-    "Business Analyst":      "https://www.hellowork.com/fr-fr/emploi/metier_business-analyst.html",
-    "Quantitative Analyst":  "https://www.hellowork.com/fr-fr/emploi/metier_data-analyst.html",
-    "Consultant Data":       "https://www.hellowork.com/fr-fr/emploi/metier_data-scientist.html",
+    #"Business Analyst":      "https://www.hellowork.com/fr-fr/emploi/metier_business-analyst.html",
+    #"Quantitative Analyst":  "https://www.hellowork.com/fr-fr/emploi/metier_data-analyst.html",
+    #"Consultant Data":       "https://www.hellowork.com/fr-fr/emploi/metier_data-scientist.html",
 }
 
 # ── Mots-clés pour valider le titre ─────────────────
 TARGET_KEYWORDS = [
     "data analyst",
     "data scientist",
-    "business analyst",
+    #"business analyst",
     "data analyst",
     "analyste données",
     "analyste quantitatif",
     "quantitative analyst",
-    "consultant data",
-    "consultant ia",
+    #"consultant data",
+    #"consultant ia",
     "machine learning",
-    "ml engineer",
+    #"ml engineer",
 ]
 
 # ── Mots-clés handicap à exclure ────────────────────

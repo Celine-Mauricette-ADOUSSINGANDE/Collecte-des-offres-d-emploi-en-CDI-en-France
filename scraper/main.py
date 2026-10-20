@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════
 #  main.py — Orchestrateur principal
 #  Lancé par GitHub Actions toutes les 6h
-#  ═══════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════
 
 import os
 import re
@@ -16,7 +16,7 @@ from scraper.sources.hellowork import fetch_all as fetch_hellowork
 load_dotenv()
 
 # ── Date minimale ────────────────────────────────────
-DATE_MIN = datetime(2026, 8, 17, tzinfo=timezone.utc)
+DATE_MIN = datetime(2026, 10, 20, tzinfo=timezone.utc)
 
 # ── Mots-clés offres handicap à exclure ─────────────
 HANDICAP_KEYWORDS = [
@@ -40,9 +40,9 @@ SEARCH_QUERIES = {
     "Data Scientist Junior":  ["data scientist junior", "junior data scientist"],
     "Data Scientist":         ["data scientist", "data scientist IA", "scientifique données", "scientifique données junior"],
     "Data Analyst":           ["data analyst", "analyste données", "analyste données junior"],
-    "Quantitative Analyst":   ["quantitative analyst", "analyste quantitatif"],
-    "Business Analyst":       ["business analyst", "business data analyst"],
-    "Consultant Data":        ["consultant data", "consultant data scientist", "consultant IA"],
+    #"Quantitative Analyst":   ["quantitative analyst", "analyste quantitatif"],
+    #"Business Analyst":       ["business analyst", "business data analyst"],
+    #"Consultant Data":        ["consultant data", "consultant data scientist", "consultant IA"],
 }
 
 
@@ -340,6 +340,7 @@ EXCLUDED_STATUSES = {
     "offer",      # offre reçue
     "rejected",   # refus
     "ignored",    # volontairement écarté
+    "already_applied",  # déjà postulé
 }
 
 
