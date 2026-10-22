@@ -7,7 +7,11 @@
 import os
 import requests
 from datetime import datetime, timezone
-from scraper.config import FT_CONTRACT_CODE, FT_API_TOKEN_URL, FT_API_SEARCH_URL
+from scraper.config import FT_API_TOKEN_URL, FT_API_SEARCH_URL
+
+# Codes contrat acceptés par l'API (séparés par des virgules)
+# CDI = contrat à durée indéterminée, CDD = contrat à durée déterminée
+FT_CONTRACT_CODES = "CDI,CDD"
 
 
 def _get_token() -> str:
@@ -29,11 +33,13 @@ def _get_token() -> str:
 
 def _parse_offer(raw: dict, query_label: str) -> dict:
     """Normaliser une offre France Travail au format commun."""
+    # "typeContrat" contient le code court (CDI / CDD), plus fiable que le libellé
+    contract = raw.get("typeContrat") or raw.get("typeContratLibelle", "CDI")
     return {
         "title":        raw.get("intitule", ""),
         "company":      raw.get("entreprise", {}).get("nom", "Non précisé"),
         "location":     raw.get("lieuTravail", {}).get("libelle", "France"),
-        "contract":     raw.get("typeContratLibelle", "CDI"),
+        "contract":     contract,
         "source":       "France Travail",
         "url":          raw.get("origineOffre", {}).get("urlOrigine", ""),
         "published_at": raw.get("dateCreation", datetime.now(timezone.utc).isoformat()),
@@ -45,7 +51,7 @@ def _parse_offer(raw: dict, query_label: str) -> dict:
 
 def fetch(query: str, query_label: str) -> list[dict]:
     """
-    Chercher les offres CDI France Travail pour un intitulé donné.
+    Chercher les offres CDI et CDD France Travail pour un intitulé donné.
     Retourne une liste d'offres normalisées.
     """
     offers = []
@@ -55,7 +61,7 @@ def fetch(query: str, query_label: str) -> list[dict]:
 
         params = {
             "motsCles":    query,
-            "typeContrat": FT_CONTRACT_CODE,
+            "typeContrat": FT_CONTRACT_CODES,
             "minCreationDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z"),
             "maxCreationDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT23:59:59Z"),
             "range":       "0-49",  # 50 résultats max par appel
@@ -70,9 +76,10 @@ def fetch(query: str, query_label: str) -> list[dict]:
         for raw in data.get("resultats", []):
             offers.append(_parse_offer(raw, query_label))
 
-        print(f"[France Travail] '{query}' → {len(offers)} offres")
+        nb_cdd = sum(1 for o in offers if o["contract"] == "CDD")
+        print(f"[France Travail] '{query}' → {len(offers)} offres (dont {nb_cdd} CDD)")
 
     except Exception as e:
         print(f"[France Travail] Erreur pour '{query}': {e}")
 
-    return offers
+    return 

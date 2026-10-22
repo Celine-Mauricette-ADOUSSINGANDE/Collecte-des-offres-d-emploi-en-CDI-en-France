@@ -34,6 +34,9 @@ METIER_URLS = {
     #"Consultant Data":       "https://www.hellowork.com/fr-fr/emploi/metier_data-scientist.html",
 }
 
+# ── Types de contrat acceptés ───────────────────────
+ACCEPTED_CONTRACTS = ["CDI", "CDD"]
+
 # ── Mots-clés pour valider le titre ─────────────────
 TARGET_KEYWORDS = [
     "data analyst",
@@ -57,6 +60,11 @@ HANDICAP_KEYWORDS = [
     "disability", "disabled", "agefiph", "fiphfp",
 ]
 
+# ── Contrats à exclure ──────────────────────────────
+EXCLUDED_CONTRACT_WORDS = [
+    "alternance", "apprentissage", "apprenti", "stage", "stagiaire","intérim", "freelance", "indépendant", "indépendante", "independant",
+]
+
 
 # ════════════════════════════════════════════════════════
 #  Fonctions utilitaires
@@ -73,13 +81,27 @@ def _is_target_job(title: str) -> bool:
     return any(kw in t for kw in TARGET_KEYWORDS)
 
 
-def _is_cdi(text: str) -> bool:
-    """Vérifier que l'offre est bien en CDI et pas en alternance."""
+def _detect_contract(text: str) -> str | None:
+    """
+    Détecter le type de contrat (CDI ou CDD) dans le texte.
+    Retourne "CDI", "CDD" ou None si aucun contrat accepté
+    n'est trouvé (ou si c'est une alternance / un stage).
+    Si les deux apparaissent, on prend celui qui apparaît en premier.
+    """
     t = _normalize(text)
-    if "cdi" not in t:
-        return False
-    excluded = ["alternance", "apprentissage", "apprenti", "stage", "stagiaire"]
-    return not any(w in t for w in excluded)
+
+    if any(w in t for w in EXCLUDED_CONTRACT_WORDS):
+        return None
+
+    best_contract = None
+    best_pos = None
+    for contract in ACCEPTED_CONTRACTS:
+        m = re.search(rf"\b{contract.lower()}\b", t)
+        if m and (best_pos is None or m.start() < best_pos):
+            best_contract = contract
+            best_pos = m.start()
+
+    return best_contract
 
 
 def _is_handicap(title: str, text: str) -> bool:
@@ -132,7 +154,7 @@ def _extract_salary(container_text: str) -> str:
 # ════════════════════════════════════════════════════════
 
 def _scrape_page(url: str, label: str) -> list[dict]:
-    """Scraper une page métier Hello Work et retourner les offres CDI."""
+    """Scraper une page métier Hello Work et retourner les offres CDI / CDD."""
     try:
         resp = requests.get(url, headers=HEADERS, timeout=30)
         resp.raise_for_status()
@@ -174,8 +196,9 @@ def _scrape_page(url: str, label: str) -> list[dict]:
                 container = container.parent
         container_text = container.get_text(" ", strip=True)
 
-        # CDI uniquement
-        if not _is_cdi(container_text):
+        # CDI ou CDD uniquement
+        contract = _detect_contract(container_text)
+        if not contract:
             continue
 
         # Exclure offres handicap
@@ -189,7 +212,7 @@ def _scrape_page(url: str, label: str) -> list[dict]:
             "title":        title,
             "company":      "Non précisé",   # Non disponible sur la page liste
             "location":     location,
-            "contract":     "CDI",
+            "contract":     contract,        # "CDI" ou "CDD"
             "source":       "Hello Work",
             "url":          job_url,
             "published_at": datetime.now(timezone.utc).isoformat(),
@@ -211,7 +234,7 @@ def fetch_all() -> list[dict]:
     """
     Scraper toutes les pages métier Hello Work.
     Appelé une seule fois depuis main.py (pas par requête).
-    Retourne une liste d'offres normalisées.
+    Retourne une liste d'offres normalisées (CDI + CDD).
     """
     all_offers  = []
     seen_urls   = set()           # Déduplication globale inter-catégories
@@ -226,7 +249,9 @@ def fetch_all() -> list[dict]:
             for o in new:
                 seen_urls.add(o["url"])
 
-            print(f"  [✅ Hello Work] '{label}' → {len(new)} offres")
+            nb_cdi = sum(1 for o in new if o["contract"] == "CDI")
+            nb_cdd = sum(1 for o in new if o["contract"] == "CDD")
+            print(f"  [✅ Hello Work] '{label}' → {len(new)} offres (CDI: {nb_cdi}, CDD: {nb_cdd})")
             all_offers.extend(new)
 
         except Exception as e:

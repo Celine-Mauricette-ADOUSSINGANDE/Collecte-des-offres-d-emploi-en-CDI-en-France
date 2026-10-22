@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Job Tracker — Data Science / Data Analyst CDI</title>
+  <title>Job Tracker — Data Science / Data Analyst CDI-CDD</title>
 
 
   <!-- Supabase JS client -->
@@ -124,6 +124,19 @@
     .badge-interview { background: #fffbeb; color: var(--warning); }
     .badge-rejected  { background: #fef2f2; color: var(--danger); }
 
+    /* ── Tag contrat ── */
+    .contract-tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .contract-cdi { background: #ecfdf5; color: var(--success); }
+    .contract-cdd { background: #fffbeb; color: var(--warning); }
+
     /* ── Source tag ── */
     .source-tag {
       display: inline-block;
@@ -189,7 +202,7 @@
 
 <header>
   <div>
-    <h1>🎯 Job Tracker — Data Science / Data Analyst CDI</h1>
+    <h1>🎯 Job Tracker — Data Science / Data Analyst CDI &amp; CDD</h1>
     <p>Offres collectées automatiquement · France </p>
   </div>
   <div id="last-updated">Chargement…</div>
@@ -216,7 +229,12 @@
     <option value="rejected">Refus</option>
     <option value="unavailable">Non disponible</option>
     <option value="not_matching">Ne correspond pas</option>
-    <option value="alredy_applied">Déjà postulé</option>
+    <option value="already_applied">Déjà postulé</option>
+  </select>
+  <select id="f-contract">
+    <option value="">Tous les contrats</option>
+    <option value="CDI">CDI</option>
+    <option value="CDD">CDD</option>
   </select>
   <select id="f-label">
     <option value="">Tous les intitulés</option>
@@ -278,7 +296,7 @@
   rejected:    "Refus",
   unavailable: "Non disponible",
   not_matching:"Ne correspond pas",
-  alredy_applied: "Déjà postulé",
+  already_applied: "Déjà postulé",
   };
   const STATUS_CLASS = {
     new:       "badge-new",
@@ -288,7 +306,7 @@
     rejected:  "badge-rejected",
     unavailable: "badge-unavailable",
     not_matching: "badge-not-matching",
-    alredy_applied: "badge-applied",
+    already_applied: "badge-applied",
   };
 
   // ── Chargement initial ────────────────────────────────
@@ -327,19 +345,29 @@
     document.getElementById("s-rate").textContent      = rate + "%";
   }
 
+  // ── Tag contrat (CDI / CDD) ───────────────────────────
+  function contractTag(contract) {
+    const c = (contract || "CDI").toUpperCase();
+    const cls = c === "CDD" ? "contract-cdd" : "contract-cdi";
+    return `<span class="contract-tag ${cls}">${c}</span>`;
+  }
+
   // ── Tableau ───────────────────────────────────────────
   function renderTable() {
     const search = document.getElementById("f-search").value.toLowerCase();
-    const fStatus = document.getElementById("f-status").value;
-    const fLabel  = document.getElementById("f-label").value;
-    const fSource = document.getElementById("f-source").value;
+    const fStatus   = document.getElementById("f-status").value;
+    const fContract = document.getElementById("f-contract").value;
+    const fLabel    = document.getElementById("f-label").value;
+    const fSource   = document.getElementById("f-source").value;
 
     const filtered = allJobs.filter(j => {
-      const matchSearch = !search || [j.title, j.company, j.location].join(" ").toLowerCase().includes(search);
-      const matchStatus = !fStatus || j.status === fStatus;
-      const matchLabel  = !fLabel  || j.search_label === fLabel;
-      const matchSource = !fSource || j.source === fSource;
-      return matchSearch && matchStatus && matchLabel && matchSource;
+      const matchSearch   = !search || [j.title, j.company, j.location].join(" ").toLowerCase().includes(search);
+      const matchStatus   = !fStatus || j.status === fStatus;
+      // Les anciennes offres sans valeur "contract" sont considérées comme des CDI
+      const matchContract = !fContract || (j.contract || "CDI").toUpperCase() === fContract;
+      const matchLabel    = !fLabel  || j.search_label === fLabel;
+      const matchSource   = !fSource || j.source === fSource;
+      return matchSearch && matchStatus && matchContract && matchLabel && matchSource;
     });
 
     const tbody = document.getElementById("jobs-tbody");
@@ -360,7 +388,7 @@
         <tr>
           <td>
             <div class="job-title">${job.title}</div>
-            <div class="job-company">${job.company}${salary}</div>
+            <div class="job-company">${contractTag(job.contract)}${job.company}${salary}</div>
           </td>
           <td style="color:#666">${job.location || "–"}</td>
           <td><span class="source-tag">${job.source}</span></td>
@@ -415,7 +443,7 @@
   }
 
   // ── Filtres ───────────────────────────────────────────
-  ["f-search", "f-status", "f-label", "f-source"].forEach(id => {
+  ["f-search", "f-status", "f-contract", "f-label", "f-source"].forEach(id => {
     document.getElementById(id).addEventListener("input", renderTable);
   });
 

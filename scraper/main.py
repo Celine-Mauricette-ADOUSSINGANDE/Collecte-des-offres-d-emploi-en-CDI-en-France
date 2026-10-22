@@ -18,6 +18,9 @@ load_dotenv()
 # ── Date minimale ────────────────────────────────────
 DATE_MIN = datetime(2026, 10, 20, tzinfo=timezone.utc)
 
+# ── Types de contrat recherchés (codes France Travail) ──
+FT_CONTRACT_CODES = "CDI,CDD"
+
 # ── Mots-clés offres handicap à exclure ─────────────
 HANDICAP_KEYWORDS = [
     "handicap", "handicapé", "handicapés", "handi",
@@ -101,7 +104,7 @@ def scrape_france_travail(query: str, label: str, token: str) -> list[dict]:
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             params={
                 "motsCles":        query,
-                "typeContrat":     "CDI",
+                "typeContrat":     FT_CONTRACT_CODES,
                 "minCreationDate": DATE_MIN.strftime("%Y-%m-%dT00:00:00Z"),
                 "maxCreationDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT23:59:59Z"),
                 "range":           "0-149",
@@ -116,8 +119,10 @@ def scrape_france_travail(query: str, label: str, token: str) -> list[dict]:
             return []
 
         results = resp.json().get("resultats", [])
-        print(f"  [✅ France Travail] '{query}' → {len(results)} offres")
-        return [_normalize_ft(r, label) for r in results]
+        offers  = [_normalize_ft(r, label) for r in results]
+        nb_cdd  = sum(1 for o in offers if o["contract"] == "CDD")
+        print(f"  [✅ France Travail] '{query}' → {len(offers)} offres (dont {nb_cdd} CDD)")
+        return offers
 
     except Exception as e:
         print(f"  [❌ France Travail] '{query}' erreur : {e}")
@@ -136,11 +141,14 @@ def _normalize_ft(r: dict, label: str) -> dict:
 
     experience = r.get("experienceLibelle", "") or ""
 
+    # Code court renvoyé par l'API : "CDI" ou "CDD"
+    contract = r.get("typeContrat") or "CDI"
+
     return {
         "title":        r.get("intitule", ""),
         "company":      r.get("entreprise", {}).get("nom", "Non précisé"),
         "location":     r.get("lieuTravail", {}).get("libelle", "France"),
-        "contract":     "CDI",
+        "contract":     contract,
         "source":       "France Travail",
         "url":          r.get("origineOffre", {}).get("urlOrigine", ""),
         "published_at": r.get("dateCreation", datetime.now(timezone.utc).isoformat()),
@@ -418,7 +426,7 @@ def save_to_supabase(offers: list[dict]) -> int:
 
 def main():
     print("═" * 55)
-    print("  JOB TRACKER — Data Science CDI France")
+    print("  JOB TRACKER — Data Science CDI/CDD France")
     print("  Sources : France Travail (API) + Hello Work")
     print(f"  {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print("═" * 55)
