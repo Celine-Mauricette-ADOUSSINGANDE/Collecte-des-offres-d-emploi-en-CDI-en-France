@@ -17,13 +17,13 @@ on:
 jobs:
   scrape:
     name: Scraping & stockage Supabase
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
       # ── 1. Récupérer le code ────────────────────────────
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       # ── 2. Installer Python ─────────────────────────────
       - name: Set up Python 3.11
