@@ -4,7 +4,7 @@
 #  + possibilité de lancer manuellement depuis l'onglet Actions
 # ═══════════════════════════════════════════════════════
 
-name: 🔍 Job Scraper — Data Science CDI
+name: 🔍 Job Scraper — Data Science CDI/CDD
 
 on:
   schedule:
@@ -36,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # ── 4. Lancer le scraper ────────────────────────────
+      # ── 4. Lancer le scraper (CDI + CDD) ────────────────
       #  Les secrets sont définis dans :
       #  GitHub repo > Settings > Secrets and variables > Actions
       - name: Run scraper
@@ -54,3 +54,4 @@ jobs:
       - name: Summary
         if: always()
         run: echo "✅ Scraping terminé — voir les logs ci-dessus pour le détail."
+        
