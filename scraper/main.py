@@ -35,7 +35,9 @@ HANDICAP_KEYWORDS = [
 SENIOR_KEYWORDS = [
     "senior", "sénior", "confirmé", "confirmée",
     "expérimenté", "expérimentée", "lead", "principal",
-    "staff", "expert", "head of", "manager",
+    "staff", "expert", "head of", "manager", "alternance", "apprentissage", 
+    "apprenti", "stage", "stagiaire","intérim", "freelance", "indépendant", 
+    "indépendante", "independant",
 ]
 
 # ── Intitulés ────────────────────────────────────────
